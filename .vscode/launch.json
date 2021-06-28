@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "port": 5678,
+            "host": "localhost",
+            "args": ["--target", 
+                "./input_samples/s3.jpg",
+                "--images",
+                "./images/",
+                "--grid",
+                "110",
+                "150",
+                "--output",
+                "./input_samples/Mosaic4b.jpg"
+            ]
+
+        }
+    ]
+}
+
