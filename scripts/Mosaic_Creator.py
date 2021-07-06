@@ -8,6 +8,7 @@ from scipy import ndimage
 
 parser = argparse.ArgumentParser(description='Creates a photomosaic from input images')
 parser.add_argument('--target', dest='target', required=True, help="Image to create mosaic from")
+parser.add_argument('--mask', dest='mask', required=False, help="mask Image")
 parser.add_argument('--images', dest='images', required=True, help="Diectory of images")
 parser.add_argument('--grid', nargs=2, dest='grid', required=True, help="Size of photo mosaic")
 parser.add_argument('--output', dest='output', required=False)
@@ -16,7 +17,6 @@ args = parser.parse_args()
 
 def nptoimg(nparry):
     return Image.fromarray(nparry, "RGBA")
-
 
 cnt = 0
 
@@ -169,26 +169,50 @@ def saveImg(img, filename, ext):
         os.remove( filename )
     img.save(filename, ext)
 
-def getImages(images_directory):
-    files = sorted(os.listdir(images_directory))
-    images = []
-    for file in files:
-        filePath = os.path.abspath(os.path.join(images_directory, file))
+
+def loadFile(file, filePath):
         try:
             fp = open(filePath, "rb")
             im = Image.open(fp)
             im = im.convert('RGBA')
-            images.append([im, file])
             im.load()
             fp.close()
+            return [im, file]
         except:
             print("Invalid image: %s" % (filePath,))
+
+
+
+def getImages(images_directory):
+    files = sorted(os.listdir(images_directory))
+    images = []
+
+    filePath = os.path.abspath(os.path.join(images_directory, 'white.jpg'))
+    if os.path.isfile(filePath):
+        print('loaded white')
+        v = loadFile('white.jpg', filePath)
+        images.append(v)
+
+    filePath = os.path.abspath(os.path.join(images_directory, 'black.jpg'))
+    if os.path.isfile(filePath):
+        print('loaded black')
+        v = loadFile('black.jpg', filePath)
+        images.append(v)
+
+    for file in files:
+        filePath = os.path.abspath(os.path.join(images_directory, file))
+        # fp = open(filePath, "rb")
+        # im = Image.open(fp)
+        # im = im.convert('RGBA')
+        v = loadFile(file, filePath)
+        if not v is None:
+            images.append(v)
     return (images)
 
 def getAverageRGB(image):
     im = np.array(image)
     w, h, d = im.shape
-    return (tuple(np.average(im.reshape(w * h, d), axis=0)))
+    return (tuple(np.round( np.average(im.reshape(w * h, d), axis=0),2)))
 
 
 def splitImage(image, size):
@@ -223,7 +247,7 @@ def getBestMatchIndex(input_avg, avgs):
     return (min_index)
 
 
-def createImageGrid(target_image, images, dims):
+def createImageGrid(target_image, mask_small_images, images, dims):
 
     m, n = dims
     multipler_width = max([img.size[0] for img in images])
@@ -239,31 +263,64 @@ def createImageGrid(target_image, images, dims):
     grid_img = Image.new('RGBA', (n * width, m * height))
     # target_image = target_image.convert('RGBA')
     grid_img.putalpha(1)
-    grid_img = target_image
-    for index in range(len(images)):
-        row = int(index / n)
-        col = index - n * row
-        # images[index].putalpha(1)
-        v = getAverageRGB(images[index])
-        if v[0] == 255.0 and v[1] == 255.0 and v[2] == 255.0:
-            continue
-        if v[0] == 0.0 and v[1] == 0.0 and v[2] == 0.0:
-            continue
-        grid_img.paste(images[index], (round(col * width - width_diff), round(row * height - height_diff)), images[index].convert('RGBA'))
+    # grid_img = target_image
+    print( "len of images {}  leng of mask_small_images {}".format(len(images), len(mask_small_images)))
+
+    arr=[]
+    for index in range(len(mask_small_images)):
+        mask_small_images[index].putalpha(1)
+        arr.append(getAverageRGB(mask_small_images[index])[0])
+
+
+    if mask_flag:
+        for idx in range(0, 256)[::-1]:
+            for index in range(len(images)):
+                
+                v = arr[index] 
+                v1 = v   
+                v2 = v-1.0   
+                if idx <= v1 and idx > v2:   
+                    row = int(index / n)
+                    col = index - n * row
+                    # images[index].putalpha(1)
+                    v = getAverageRGB(images[index])
+                    if testBlackWhite(v) == True:
+                        continue
+                    grid_img.paste(images[index], (round(col * width - width_diff), round(row * height - height_diff)), images[index].convert('RGBA'))
+    else:
+        for index in range(len(images)):
+            row = int(index / n)
+            col = index - n * row
+            # images[index].putalpha(1)
+            v = getAverageRGB(images[index])
+            if testBlackWhite(v) == True:
+                continue
+            grid_img.paste(images[index], (round(col * width - width_diff), round(row * height - height_diff)), images[index].convert('RGBA'))
     return (grid_img)
 
+def testBlackWhite( v ):
+    if v[0] == 255.0 and v[1] == 255.0 and v[2] == 255.0:
+        return True
+    if v[0] == 0.0 and v[1] == 0.0 and v[2] == 0.0:
+        return True
+    return False
 
-def createPhotomosaic(target_image, input_images, grid_size,
+
+def createPhotomosaic(target_image, mask_image, input_images, grid_size,
                       reuse_images):
 
     target_small_images = splitImage(target_image, grid_size)
-    print("splitted")
+    print("splitted target")
+
+    mask_small_images = []
+    if mask_flag:
+        mask_small_images = splitImage(mask_image, grid_size)
+        print("splitted mask")
+
     output_images = []
     count = 0
     batch_size = int(len(target_small_images) / 10)
     avgs = []
-
-    
     for arr in input_images:
         try:
             img = arr[0]
@@ -272,6 +329,9 @@ def createPhotomosaic(target_image, input_images, grid_size,
             # print(" %s  %s" % ( arr[1] ,str(v) ))
         except ValueError:
             continue
+
+    white = 0
+    black = 1
 
     for img in target_small_images:
         avg = getAverageRGB(img)
@@ -285,16 +345,32 @@ def createPhotomosaic(target_image, input_images, grid_size,
         count += 1
         # remove selected image from input if flag set
         if not reuse_images:
-            input_images.remove(match_index)
+            if not testBlackWhite( avgs[match_index] ) == True:
+                del input_images[match_index]
+                del avgs[match_index]
+            # input_images.remove remove(match_index)
 
-    mosaic_image = createImageGrid(target_image, output_images, grid_size)
+    mosaic_image = createImageGrid(target_image, mask_small_images, output_images, grid_size)
     return (mosaic_image)
 
 
 ### ---------------------------------------------
+mask_flag = False
+
+# re-use any image in input
+reuse_images = True 
+
+# resize the input to fit original image size?
+resize_input = True
+
+resize_multipler = 5
 
 
 target_image = Image.open(args.target)
+mask_image = None
+if not args.mask is None:
+    mask_image = Image.open(args.mask)
+    mask_flag = True
 
 # input images
 print('reading input folder...')
@@ -312,17 +388,9 @@ random.shuffle(input_images)
 grid_size = (int(args.grid[0]), int(args.grid[1]))
 
 # output
-output_filename = 'mosaic.jpeg'
+output_filename = 'mosaic.png'
 if args.output:
     output_filename = args.output
-
-# re-use any image in input
-reuse_images = True 
-
-# resize the input to fit original image size?
-resize_input = True
-
-resize_multipler = 2.5
 
 print('starting photomosaic creation...')
 
@@ -346,7 +414,7 @@ if resize_input:
 
 
 # create photomosaic
-mosaic_image = createPhotomosaic(target_image, input_images, grid_size, reuse_images)
+mosaic_image = createPhotomosaic(target_image, mask_image, input_images, grid_size, reuse_images)
 
 # write out mosaic
 if mosaic_image.height >= 65500 or mosaic_image.width >= 65500:
@@ -359,7 +427,9 @@ if mosaic_image.height >= 65500 or mosaic_image.width >= 65500:
     mosaic_image.resize( size=[w, h], resample=Image.NEAREST)
 
 print( "{}x{}".format(mosaic_image.height,mosaic_image.width))
-mosaic_image.save(output_filename, 'png')
+
+
+saveImg(mosaic_image, output_filename, 'png')
 
 print("saved output to %s" % (output_filename,))
 print('done.')

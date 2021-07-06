@@ -10,12 +10,14 @@
             "port": 5678,
             "host": "localhost",
             "args": ["--target", 
-                "./input_samples/s3.jpg",
+                "./input_samples/s3.png",
+                "--mask",
+                "./input_samples/s3mask.png",
                 "--images",
-                "./images/",
+                "./openmoji-72x72-color/",
                 "--grid",
-                "110",
-                "150",
+                "55",
+                "75",
                 "--output",
                 "./input_samples/Mosaic4b.jpg"
             ]
